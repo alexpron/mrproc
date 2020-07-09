@@ -1,8 +1,6 @@
 """
 Diffusion-weighted MRI data processing pipeline:
-
-
-
+In construction:
 """
 
 
@@ -11,7 +9,7 @@ import nipype.pipeline.engine as pe
 
 # python interface to mrtrix3 (mrtrix3 need to be installed in your computer)
 from nipype.interfaces import mrtrix3
-from dwi_nodes import sift_filtering
+from dwi_nodes import sift_filtering, rigid_transform_estimation, apply_linear_transform
 
 
 # Elementary bricks
@@ -57,9 +55,7 @@ tractography.inputs.backtrack = True
 tractography.inputs.min_length = 10  # 10 mm to avoid spurious streamlines
 tractography.inputs.max_length = 300  # 300 mm
 
-# TODO create command line interface for tcksift
-# TODO create command line interface for mrregister or use dipy
-# TODO create function interface for tckconvert or use dipy
+
 
 
 # Workflows corresponding to main steps (for the sake of modularity)
@@ -102,6 +98,9 @@ diffusion_pipeline.connect(csd, "dwi2fod.wm_odf", tractography, "in_file")
 diffusion_pipeline.connect(preproc, "dwi2mask.out_file", tractography, "seed_gmwmi")
 diffusion_pipeline.connect(preproc, "dwi2mask.out_file", tractography, "roi_mask")
 diffusion_pipeline.connect(tissue_classif, "out_file", tractography, "act_file")
+diffusion_pipeline.connect(tractography, "out_file", sift_filtering, "input_tracks")
+diffusion_pipeline.connect(csd,"dwi2fod.wm_odf", sift_filtering, "wm_fod")
+
 
 
 if __name__ == "__main__":
