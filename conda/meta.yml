@@ -1,0 +1,11 @@
+package:
+  name: "mri-processing"
+  version: "0.0.0"
+
+source:
+  git_url: "https://github.com/alexpron/mri-processing.git"
+
+requirements:
+
+
+about:

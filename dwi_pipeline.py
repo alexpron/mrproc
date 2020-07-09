@@ -11,7 +11,7 @@ import nipype.pipeline.engine as pe
 
 # python interface to mrtrix3 (mrtrix3 need to be installed in your computer)
 from nipype.interfaces import mrtrix3
-from nipype.interfaces import mrtrix
+from dwi_nodes import sift_filtering
 
 
 # Elementary bricks
