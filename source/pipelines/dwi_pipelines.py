@@ -1,6 +1,15 @@
 """
-Diffusion-weighted MRI data processing pipelines:
-
+Diffusion-weighted MRI data processing pipelines
+The pipelines covers the following steps:
++ Bias field correction
++ Gross mask extraction
++ Tensor and FA computation
++ Multi-Tissue Multi-Shell Constrained Spherical Deconvolution
++ Whole brain probabilistic anatomicaly constrained tractography
++ Tractogram filtering (SIFT)
++ T1 tissue classification
++ DWI to T1 registration
+Pipelines rely on Mrtrix3, FSL, Ants and nipype
 """
 
 
@@ -12,7 +21,10 @@ from nipype.interfaces import mrtrix3
 
 from source.nodes.mrtrix_nodes import sift_filtering, rigid_registration
 
+# Constants
 N_TRACKS = 5000000
+MIN_LENGTH = 10  # mm
+MAX_LENGTH = 300  # mm
 
 
 def create_preprocessing_pipeline():
@@ -32,12 +44,12 @@ def create_preprocessing_pipeline():
 
     # input and output nodes
     inputnode = pe.Node(
-        utility.IdentityInterface(fields=["dwi_volume"], mandatory_inputs=False)
+        utility.IdentityInterface(fields=["dwi_volume"], mandatory_inputs=False), name="inputnode"
     )
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=["corrected_dwi_volume", "mask"], mandatory_inputs=False
-        )
+        ), name="outputnode"
     )
 
     # pipeline structure
@@ -63,9 +75,9 @@ def create_tensor_pipeline():
 
     # input and output nodes
     inputnode = pe.Node(
-        utility.IdentityInterface(fields=["dwi_volume", "mask"], mandatory_inputs=False)
+        utility.IdentityInterface(fields=["dwi_volume", "mask"], mandatory_inputs=False), name="inputnode"
     )
-    outputnode = pe.Node(utility.IdentityInterface(fields=["tensor_coeff", "fa"]))
+    outputnode = pe.Node(utility.IdentityInterface(fields=["tensor_coeff", "fa"],mandatory_inputs=False), name="outputnode")
 
     # Workflow structure
     tensor = pe.Workflow(name="tensor")
@@ -97,10 +109,10 @@ def create_spherical_deconvolution_pipeline():
     inputnode = pe.Node(
         utility.IdentityInterface(
             fields=["dwi_volume", "mask", "5tt_file"], mandatory_inputs=False
-        )
+        ), name="inputnode"
     )
     outputnode = pe.Node(
-        utility.IdentityInterface(fields=["wm_fod"], mandatory_inputs=False)
+        utility.IdentityInterface( fields=["wm_fod"], mandatory_inputs=False), name="outputnode"
     )
 
     # Workflow structure
@@ -123,16 +135,17 @@ def create_spherical_deconvolution_pipeline():
             (
                 dwi2response,
                 dwi2fod,
-                [("wm_txt", "wm_file"), ("gm_txt", "gm_file"), ("csf_txt", "csf_file")],
+                [("wm_file", "wm_txt"), ("gm_file", "gm_txt"), ("csf_file", "csf_txt")],
             )
         ]
     )
-    csd.connect(inputnode, "wm_odf", outputnode, "wm_odf")
+    csd.connect(inputnode, 'dwi_volume', dwi2fod, 'in_file')
+    csd.connect(dwi2fod, "wm_odf", outputnode, "wm_odf")
 
     return csd
 
 
-def create_tractography_pipeline(n_tracks=N_TRACKS, min_length=10, max_length=300):
+def create_tractography_pipeline(n_tracks=N_TRACKS, min_length=MIN_LENGTH, max_length=MAX_LENGTH):
     """
     Generate whole brain probabilistic and anatomically constrained tractogram
     :param n_tracks:
@@ -165,14 +178,14 @@ def create_tractogram_generation_pipeline(n_tracks=N_TRACKS):
     inputnode = pe.Node(
         utility.IdentityInterface(
             fields=["wm_fod", "mask", "act_file"], mandatory_inputs=False
-        )
+        ), name="inputnode"
     )
     outputnode = pe.Node(
-        utility.IdentityInterface(fields=["tractogram"], mandatory_inputs=False)
+        utility.IdentityInterface(fields=["tractogram"], mandatory_inputs=False), name="outputnode"
     )
 
     # Workflow structure
-    tractogram_pipeline = pe.Workflow(name="tractogram")
+    tractogram_pipeline = pe.Workflow(name="tractogram_pipeline")
     tractogram_pipeline.connect(
         [
             (
@@ -219,13 +232,13 @@ def create_core_pipeline():
     inputnode = pe.Node(
         utility.IdentityInterface(
             fields=["dwi_volume", "t1_volume"], mandatory_inputs=False
-        )
+        ),name="inputnode"
     )
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=["corrected_dwi_volume", "wm_fod", "tractogram"],
             mandatory_inputs=False,
-        )
+        ), name="outputnode"
     )
     # mandatory steps of the diffusion pipeline (for the sake of modularity)
     core_pipeline = pe.Workflow(name="core_diffusion_pipeline")
@@ -250,21 +263,21 @@ def create_core_pipeline():
         rigid_registration,
         "apply_linear_transform.out_file",
         csd,
-        "dwi2response.mtt_file",
-    )
-    core_pipeline.connect(
-        preprocessing, "outputnode.corrected_dwi_volume", csd, "inputnode.dwi_volume"
+        "inputnode.5tt_file",
     )
     core_pipeline.connect(preprocessing, "outputnode.mask", csd, "inputnode.mask")
-    core_pipeline.connect(csd, "outputnode.wm_fod", tractogram_generation, "wm_fod")
+    core_pipeline.connect(csd, "outputnode.wm_fod", tractogram_generation, "inputnode.wm_fod")
     core_pipeline.connect(
-        preprocessing, "outputnode.mask", tractogram_generation, "seed_gmwmi"
+        preprocessing, "outputnode.mask", tractogram_generation, "inputnode.mask"
     )
-    core_pipeline.connect(preproc, "dwi2mask.out_file", tractography, "roi_mask")
     core_pipeline.connect(
-        rigid_registration, "apply_linear_transform.out_file", tractography, "act_file"
+        rigid_registration, "apply_linear_transform.out_file", tractogram_generation, "inputnode.act_file"
     )
+    core_pipeline.connect(tractogram_generation,'outputnode.tractogram', outputnode, 'tractogram')
+    core_pipeline.connect(csd, 'outputnode.wm_fod',outputnode,'wm_fod')
+    core_pipeline.connect(preprocessing,'outputnode.corrected_dwi_volume', outputnode, 'corrected_dwi_volume')
 
+    return core_pipeline
 
 def create_diffusion_pipeline():
 
@@ -275,14 +288,19 @@ def create_diffusion_pipeline():
     inputnode = pe.Node(
         utility.IdentityInterface(
             fields=["dwi_volume", "bvals", "bvecs", "t1_volume"], mandatory_inputs=False
-        )
+        ),name="inputnode"
     )
     outputnode = pe.Node(
-        utility.IdentityInterface(fields=["tractogram"], mandatory_inputs=False)
+        utility.IdentityInterface(fields=["corrected_dwi_volume","wm_fod", "tractogram"], mandatory_inputs=False), name="outputnode"
     )
 
     diffusion_pipeline = pe.Workflow(name="diffusion_pipeline")
-    diffusion_pipeline.connect([(inputnode, mrconvert, [("dwi_volume",)])])
+    diffusion_pipeline.connect([(inputnode, mrconvert, [("dwi_volume","in_file"),("bvals","in_bval"),("bvecs","in_bvec")])])
+    diffusion_pipeline.connect(mrconvert, 'out_file', core_pipeline, 'inputnode.dwi_volume')
+    diffusion_pipeline.connect(inputnode, 't1_volume', core_pipeline, 'inputnode.t1_volume')
+    diffusion_pipeline.connect(core_pipeline, 'outputnode.corrected_dwi_volume', outputnode, 'corrected_dwi_volume')
+    diffusion_pipeline.connect(core_pipeline, 'outputnode.wm_fod', outputnode, 'wm_fod')
+    diffusion_pipeline.connect(core_pipeline, 'outputnode.tractogram', outputnode, 'tractogram')
 
     return diffusion_pipeline
 

@@ -13,7 +13,7 @@ from source.pipelines.dwi_pipelines import create_diffusion_pipeline
 def test_create_diffusion_pipeline():
 
     diffusion_pipeline = create_diffusion_pipeline()
-    diffusion_pipeline.write_graph(graph2use="colored", format="png")
+    diffusion_pipeline.write_graph(graph2use="colored")
 
 
 if __name__ == "__main__":
