@@ -56,8 +56,6 @@ tractography.inputs.min_length = 10  # 10 mm to avoid spurious streamlines
 tractography.inputs.max_length = 300  # 300 mm
 
 
-
-
 # Workflows corresponding to main steps (for the sake of modularity)
 
 # pre-processing
@@ -99,8 +97,7 @@ diffusion_pipeline.connect(preproc, "dwi2mask.out_file", tractography, "seed_gmw
 diffusion_pipeline.connect(preproc, "dwi2mask.out_file", tractography, "roi_mask")
 diffusion_pipeline.connect(tissue_classif, "out_file", tractography, "act_file")
 diffusion_pipeline.connect(tractography, "out_file", sift_filtering, "input_tracks")
-diffusion_pipeline.connect(csd,"dwi2fod.wm_odf", sift_filtering, "wm_fod")
-
+diffusion_pipeline.connect(csd, "dwi2fod.wm_odf", sift_filtering, "wm_fod")
 
 
 if __name__ == "__main__":
