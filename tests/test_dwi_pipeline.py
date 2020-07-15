@@ -5,16 +5,14 @@ In construction:
 
 
 # pipeline engine of nipype
-import nipype.pipeline.engine as pe
 
 # python interface to mrtrix3 (mrtrix3 need to be installed in your computer)
-from dwi_pipeline import create_diffusion_pipeline
+from source.pipelines.dwi_pipeline import create_diffusion_pipeline
 
 def test_create_diffusion_pipeline():
 
     diffusion_pipeline = create_diffusion_pipeline()
     diffusion_pipeline.write_graph(graph2use="colored")
-
 
 
 if __name__ == "__main__":

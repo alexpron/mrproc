@@ -39,7 +39,7 @@ def mrregister_rigid(image, template, transform):
     pass
 
 
-def mrtransform_linear(input, output, transform):
+def mrtransform_linear(in_file, out_file, transform):
     """
     Dirty wrapping of the mrtransform command to apply linear transform to a volume
     :param input:
@@ -61,9 +61,9 @@ def mrtransform_linear(input, output, transform):
         + " "
         + "-inverse"
         + " "
-        + input
+        + in_file
         + " "
-        + output
+        + out_file
     )
     subprocess.run(cmd)
     pass
@@ -128,19 +128,13 @@ rigid_transform_estimation = pe.Node(
         function=mrregister_rigid,
     ),
 )
-
 apply_linear_transform = pe.Node(
     name="apply_linear_transform",
     interface=Function(
-        input_names=["input", "transform"],
-        output_names=["output"],
+        input_names=["in_file", "transform"],
+        output_names=["out_file"],
         function=mrtransform_linear,
     ),
-)
-
-rigid_registration = pe.Workflow(name="rigid_registration")
-rigid_registration.connect(
-    rigid_transform_estimation, "transform", apply_linear_transform, "transform"
 )
 
 sift_filtering = pe.Node(
@@ -158,3 +152,9 @@ tracks_selection = pe.Node(
         output_names=["output_tracks"],
     ),
 )
+
+rigid_registration = pe.Workflow(
+    name="rigid_registration"
+)
+# assume only the transform is identical, warped volume can be different
+rigid_registration.connect(rigid_transform_estimation, 'transform', apply_linear_transform,'transform')
