@@ -153,8 +153,8 @@ tracks_selection = pe.Node(
     ),
 )
 
-rigid_registration = pe.Workflow(
-    name="rigid_registration"
-)
+rigid_registration = pe.Workflow(name="rigid_registration")
 # assume only the transform is identical, warped volume can be different
-rigid_registration.connect(rigid_transform_estimation, 'transform', apply_linear_transform,'transform')
+rigid_registration.connect(
+    rigid_transform_estimation, "transform", apply_linear_transform, "transform"
+)
