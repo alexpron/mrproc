@@ -10,14 +10,14 @@ The proposed treatment chains leverage the following  neuroimaging software:
  
 # Installation
 ```bash
-git clone https://github.com/alexpron/mri-processing.git
+git clone https://github.com/alexpron/mrproc.git
 ```
 
 ## User 
-```python
+```bash
 pip install . 
 ```
 ## Developer
-```python
+```bash
 pip install -e .['dev']
 ```

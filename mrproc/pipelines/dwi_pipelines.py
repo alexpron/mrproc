@@ -35,7 +35,7 @@ def create_preprocessing_pipeline():
 
     # Bias correction of the diffusion MRI data (for more quantitative approach)
     diffusionbiascorrect = pe.Node(
-        interface=mrtrix3.preprocess.diffusionBiasCorrect(), name="diffusionbiascorrect"
+        interface=mrtrix3.preprocess.DWIBiasCorrect(), name="diffusionbiascorrect"
     )
     diffusionbiascorrect.use_ants = True
 
