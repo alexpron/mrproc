@@ -8,7 +8,7 @@ The pipelines covers the following steps:
 + Whole brain probabilistic anatomicaly constrained tractography
 + Tractogram filtering (SIFT)
 + T1 tissue classification
-+ DWI to T1 registration
++ diffusion to T1 registration
 Pipelines rely on Mrtrix3, FSL, Ants and nipype
 """
 
@@ -19,7 +19,7 @@ from nipype.interfaces import utility
 # mrtrix3 need to be installed in the computer
 from nipype.interfaces import mrtrix3
 
-from source.nodes.mrtrix_nodes import sift_filtering, rigid_registration
+from mrproc.nodes.mrtrix_nodes import sift_filtering, rigid_registration
 
 # Constants
 N_TRACKS = 5000000
@@ -34,32 +34,32 @@ def create_preprocessing_pipeline():
     """
 
     # Bias correction of the diffusion MRI data (for more quantitative approach)
-    dwibiascorrect = pe.Node(
-        interface=mrtrix3.preprocess.DWIBiasCorrect(), name="dwibiascorrect"
+    diffusionbiascorrect = pe.Node(
+        interface=mrtrix3.preprocess.diffusionBiasCorrect(), name="diffusionbiascorrect"
     )
-    dwibiascorrect.use_ants = True
+    diffusionbiascorrect.use_ants = True
 
-    # gross brain mask stemming from DWI data
-    dwi2mask = pe.Node(interface=mrtrix3.utils.BrainMask(), name="dwi2mask")
+    # gross brain mask stemming from diffusion data
+    diffusion2mask = pe.Node(interface=mrtrix3.utils.BrainMask(), name="diffusion2mask")
 
     # input and output nodes
     inputnode = pe.Node(
-        utility.IdentityInterface(fields=["dwi_volume"], mandatory_inputs=False),
+        utility.IdentityInterface(fields=["diffusion_volume"], mandatory_inputs=False),
         name="inputnode",
     )
     outputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["corrected_dwi_volume", "mask"], mandatory_inputs=False
+            fields=["corrected_diffusion_volume", "mask"], mandatory_inputs=False
         ),
         name="outputnode",
     )
 
     # pipeline structure
     preproc = pe.Workflow(name="preprocessing")
-    preproc.connect(inputnode, "dwi_volume", dwibiascorrect, "in_file")
-    preproc.connect(dwibiascorrect, "out_file", dwi2mask, "in_file")
-    preproc.connect(dwibiascorrect, "out_file", outputnode, "corrected_dwi_volume")
-    preproc.connect(dwi2mask, "out_file", outputnode, "mask")
+    preproc.connect(inputnode, "diffusion_volume", diffusionbiascorrect, "in_file")
+    preproc.connect(diffusionbiascorrect, "out_file", diffusion2mask, "in_file")
+    preproc.connect(diffusionbiascorrect, "out_file", outputnode, "corrected_diffusion_volume")
+    preproc.connect(diffusion2mask, "out_file", outputnode, "mask")
 
     return preproc
 
@@ -70,7 +70,7 @@ def create_tensor_pipeline():
     :return:
     """
     # tensor coefficients estimation
-    dwi2tensor = pe.Node(interface=mrtrix3.reconst.FitTensor(), name="dwi2tensor")
+    diffusion2tensor = pe.Node(interface=mrtrix3.reconst.FitTensor(), name="diffusion2tensor")
 
     # derived FA contrast
     tensor2fa = pe.Node(interface=mrtrix3.TensorMetrics(), name="tensor2fa")
@@ -78,7 +78,7 @@ def create_tensor_pipeline():
     # input and output nodes
     inputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["dwi_volume", "mask"], mandatory_inputs=False
+            fields=["diffusion_volume", "mask"], mandatory_inputs=False
         ),
         name="inputnode",
     )
@@ -91,10 +91,10 @@ def create_tensor_pipeline():
 
     # Workflow structure
     tensor = pe.Workflow(name="tensor")
-    tensor.connect(inputnode, "dwi_volume", dwi2tensor, "in_file")
-    tensor.connect(inputnode, "mask", dwi2tensor, "in_mask")
-    tensor.connect(dwi2tensor, "out_file", tensor2fa, "in_file")
-    tensor.connect(dwi2tensor, "out_file", outputnode, "tensor_coeff")
+    tensor.connect(inputnode, "diffusion_volume", diffusion2tensor, "in_file")
+    tensor.connect(inputnode, "mask", diffusion2tensor, "in_mask")
+    tensor.connect(diffusion2tensor, "out_file", tensor2fa, "in_file")
+    tensor.connect(diffusion2tensor, "out_file", outputnode, "tensor_coeff")
     tensor.connect(tensor2fa, "out_fa", outputnode, "fa")
 
     return tensor
@@ -105,20 +105,20 @@ def create_spherical_deconvolution_pipeline():
     Estimate impulsionnal response and derived multi-shell multi
     :return:
     """
-    dwi2response = pe.Node(
-        interface=mrtrix3.preprocess.ResponseSD(), name="dwi2response"
+    diffusion2response = pe.Node(
+        interface=mrtrix3.preprocess.ResponseSD(), name="diffusion2response"
     )
-    dwi2response.inputs.algorithm = "msmt_5tt"
+    diffusion2response.inputs.algorithm = "msmt_5tt"
 
     # Multi-shell multi tissue spherical deconvolution of the diffusion MRI data
-    dwi2fod = pe.Node(
-        interface=mrtrix3.reconst.ConstrainedSphericalDeconvolution(), name="dwi2fod"
+    diffusion2fod = pe.Node(
+        interface=mrtrix3.reconst.ConstrainedSphericalDeconvolution(), name="diffusion2fod"
     )
 
     # Input and output nodes
     inputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["dwi_volume", "mask", "5tt_file"], mandatory_inputs=False
+            fields=["diffusion_volume", "mask", "5tt_file"], mandatory_inputs=False
         ),
         name="inputnode",
     )
@@ -133,9 +133,9 @@ def create_spherical_deconvolution_pipeline():
         [
             (
                 inputnode,
-                dwi2response,
+                diffusion2response,
                 [
-                    ("dwi_volume", "in_file"),
+                    ("diffusion_volume", "in_file"),
                     ("mask", "in_mask"),
                     ("5tt_file", "mtt_file"),
                 ],
@@ -145,14 +145,14 @@ def create_spherical_deconvolution_pipeline():
     csd.connect(
         [
             (
-                dwi2response,
-                dwi2fod,
+                diffusion2response,
+                diffusion2fod,
                 [("wm_file", "wm_txt"), ("gm_file", "gm_txt"), ("csf_file", "csf_txt")],
             )
         ]
     )
-    csd.connect(inputnode, "dwi_volume", dwi2fod, "in_file")
-    csd.connect(dwi2fod, "wm_odf", outputnode, "wm_odf")
+    csd.connect(inputnode, "diffusion_volume", diffusion2fod, "in_file")
+    csd.connect(diffusion2fod, "wm_odf", outputnode, "wm_odf")
 
     return csd
 
@@ -184,7 +184,7 @@ def create_tractogram_generation_pipeline(n_tracks=N_TRACKS):
     :return:
     """
 
-    from source.nodes.mrtrix_nodes import sift_filtering
+    from mrproc.nodes.mrtrix_nodes import sift_filtering
 
     tractography = create_tractography_pipeline(n_tracks)
 
@@ -247,13 +247,13 @@ def create_core_pipeline():
     # Input and output nodes
     inputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["dwi_volume", "t1_volume"], mandatory_inputs=False
+            fields=["diffusion_volume", "t1_volume"], mandatory_inputs=False
         ),
         name="inputnode",
     )
     outputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["corrected_dwi_volume", "wm_fod", "tractogram"],
+            fields=["corrected_diffusion_volume", "wm_fod", "tractogram"],
             mandatory_inputs=False,
         ),
         name="outputnode",
@@ -261,14 +261,14 @@ def create_core_pipeline():
     # mandatory steps of the diffusion pipeline (for the sake of modularity)
     core_pipeline = pe.Workflow(name="core_diffusion_pipeline")
     core_pipeline.connect(
-        inputnode, "dwi_volume", preprocessing, "inputnode.dwi_volume"
+        inputnode, "diffusion_volume", preprocessing, "inputnode.diffusion_volume"
     )
     core_pipeline.connect(
-        preprocessing, "outputnode.corrected_dwi_volume", tensor, "inputnode.dwi_volume"
+        preprocessing, "outputnode.corrected_diffusion_volume", tensor, "inputnode.diffusion_volume"
     )
     core_pipeline.connect(preprocessing, "outputnode.mask", tensor, "inputnode.mask")
     core_pipeline.connect(
-        preprocessing, "outputnode.corrected_dwi_volume", csd, "inputnode.dwi_volume"
+        preprocessing, "outputnode.corrected_diffusion_volume", csd, "inputnode.diffusion_volume"
     )
     core_pipeline.connect(
         tensor, "outputnode.fa", rigid_registration, "rigid_transform_estimation.image"
@@ -302,9 +302,9 @@ def create_core_pipeline():
     core_pipeline.connect(csd, "outputnode.wm_fod", outputnode, "wm_fod")
     core_pipeline.connect(
         preprocessing,
-        "outputnode.corrected_dwi_volume",
+        "outputnode.corrected_diffusion_volume",
         outputnode,
-        "corrected_dwi_volume",
+        "corrected_diffusion_volume",
     )
 
     return core_pipeline
@@ -318,13 +318,13 @@ def create_diffusion_pipeline():
     # input and output node
     inputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["dwi_volume", "bvals", "bvecs", "t1_volume"], mandatory_inputs=False
+            fields=["diffusion_volume", "bvals", "bvecs", "t1_volume"], mandatory_inputs=False
         ),
         name="inputnode",
     )
     outputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["corrected_dwi_volume", "wm_fod", "tractogram"],
+            fields=["corrected_diffusion_volume", "wm_fod", "tractogram"],
             mandatory_inputs=False,
         ),
         name="outputnode",
@@ -336,21 +336,21 @@ def create_diffusion_pipeline():
             (
                 inputnode,
                 mrconvert,
-                [("dwi_volume", "in_file"), ("bvals", "in_bval"), ("bvecs", "in_bvec")],
+                [("diffusion_volume", "in_file"), ("bvals", "in_bval"), ("bvecs", "in_bvec")],
             )
         ]
     )
     diffusion_pipeline.connect(
-        mrconvert, "out_file", core_pipeline, "inputnode.dwi_volume"
+        mrconvert, "out_file", core_pipeline, "inputnode.diffusion_volume"
     )
     diffusion_pipeline.connect(
         inputnode, "t1_volume", core_pipeline, "inputnode.t1_volume"
     )
     diffusion_pipeline.connect(
         core_pipeline,
-        "outputnode.corrected_dwi_volume",
+        "outputnode.corrected_diffusion_volume",
         outputnode,
-        "corrected_dwi_volume",
+        "corrected_diffusion_volume",
     )
     diffusion_pipeline.connect(core_pipeline, "outputnode.wm_fod", outputnode, "wm_fod")
     diffusion_pipeline.connect(
