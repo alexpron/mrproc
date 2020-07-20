@@ -21,3 +21,6 @@ pip install .
 ```bash
 pip install -e .['dev']
 ```
+
+# Current Diffusion pipeline 
+![graph](./tests/graph.png)

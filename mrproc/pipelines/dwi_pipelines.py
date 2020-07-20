@@ -1,6 +1,7 @@
 """
 Diffusion-weighted MRI data processing pipelines
-The pipelines covers the following steps:
+
+The pipelines cover the following steps:
 + Bias field correction
 + Gross mask extraction
 + Tensor and FA computation
@@ -9,17 +10,19 @@ The pipelines covers the following steps:
 + Tractogram filtering (SIFT)
 + T1 tissue classification
 + diffusion to T1 registration
-Pipelines rely on Mrtrix3, FSL, Ants and nipype
+Pipelines rely on Mrtrix3, FSL, Ants and Nipype package
 """
 
 
 import nipype.pipeline.engine as pe
 from nipype.interfaces import utility
-
-# mrtrix3 need to be installed in the computer
 from nipype.interfaces import mrtrix3
 
-from mrproc.nodes.mrtrix_nodes import sift_filtering, rigid_registration
+from mrproc.nodes.mrtrix_nodes import create_tractography_node
+from mrproc.nodes.mrtrix_nodes import create_tissue_classification_node
+from mrproc.nodes.custom_nodes import create_sift_filtering_node
+from mrproc.nodes.custom_nodes import create_rigid_registration_pipeline
+
 
 # Constants
 N_TRACKS = 5000000
@@ -29,7 +32,7 @@ MAX_LENGTH = 300  # mm
 
 def create_preprocessing_pipeline():
     """
-    Bias correction and gross masking of a distorsion corrected diffusion weighted volume
+    Bias correction and gross masking of a distortion corrected diffusion weighted volume
     :return:
     """
 
@@ -58,7 +61,9 @@ def create_preprocessing_pipeline():
     preproc = pe.Workflow(name="preprocessing")
     preproc.connect(inputnode, "diffusion_volume", diffusionbiascorrect, "in_file")
     preproc.connect(diffusionbiascorrect, "out_file", diffusion2mask, "in_file")
-    preproc.connect(diffusionbiascorrect, "out_file", outputnode, "corrected_diffusion_volume")
+    preproc.connect(
+        diffusionbiascorrect, "out_file", outputnode, "corrected_diffusion_volume"
+    )
     preproc.connect(diffusion2mask, "out_file", outputnode, "mask")
 
     return preproc
@@ -70,7 +75,9 @@ def create_tensor_pipeline():
     :return:
     """
     # tensor coefficients estimation
-    diffusion2tensor = pe.Node(interface=mrtrix3.reconst.FitTensor(), name="diffusion2tensor")
+    diffusion2tensor = pe.Node(
+        interface=mrtrix3.reconst.FitTensor(), name="diffusion2tensor"
+    )
 
     # derived FA contrast
     tensor2fa = pe.Node(interface=mrtrix3.TensorMetrics(), name="tensor2fa")
@@ -112,7 +119,8 @@ def create_spherical_deconvolution_pipeline():
 
     # Multi-shell multi tissue spherical deconvolution of the diffusion MRI data
     diffusion2fod = pe.Node(
-        interface=mrtrix3.reconst.ConstrainedSphericalDeconvolution(), name="diffusion2fod"
+        interface=mrtrix3.reconst.ConstrainedSphericalDeconvolution(),
+        name="diffusion2fod",
     )
 
     # Input and output nodes
@@ -157,36 +165,17 @@ def create_spherical_deconvolution_pipeline():
     return csd
 
 
-def create_tractography_pipeline(
-    n_tracks=N_TRACKS, min_length=MIN_LENGTH, max_length=MAX_LENGTH
-):
-    """
-    Generate whole brain probabilistic and anatomically constrained tractogram
-    :param n_tracks:
-    :param min_length:
-    :param max_length:
-    :return:
-    """
-    tractography = pe.Node(interface=mrtrix3.tracking.Tractography(), name="tckgen")
-    tractography.inputs.algorithm = "iFOD2"
-    tractography.inputs.n_tracks = n_tracks
-    tractography.inputs.crop_at_gmwmi = True
-    tractography.inputs.backtrack = True
-    tractography.inputs.min_length = min_length
-    tractography.inputs.max_length = max_length
-
-    return tractography
 
 
-def create_tractogram_generation_pipeline(n_tracks=N_TRACKS):
+def create_tractogram_generation_pipeline(n_tracks=N_TRACKS ):
     """
     Whole brain probabilistic anatomically constrained tractogram generation and filtering
     :return:
     """
 
-    from mrproc.nodes.mrtrix_nodes import sift_filtering
-
-    tractography = create_tractography_pipeline(n_tracks)
+    tractography = create_tractography_node(n_tracks, min_length=MIN_LENGTH,
+                                            max_length=MAX_LENGTH)
+    sift_filtering = create_sift_filtering_node()
 
     # Input and output nodes
     inputnode = pe.Node(
@@ -223,15 +212,7 @@ def create_tractogram_generation_pipeline(n_tracks=N_TRACKS):
     return tractogram_pipeline
 
 
-def create_tissue_classification_pipeline():
-    """
-    :return:
-    """
-    # Tissue classification from T1 MRI data
-    tissue_classif = pe.Node(interface=mrtrix3.Generate5tt(), name="tissue_classif")
-    # rely on FSL for T1 tissue segmentation
-    tissue_classif.inputs.algorithm = "fsl"
-    return tissue_classif
+
 
 
 def create_core_pipeline():
@@ -239,11 +220,14 @@ def create_core_pipeline():
 
     :return:
     """
+
     preprocessing = create_preprocessing_pipeline()
     tensor = create_tensor_pipeline()
-    tissue_classif = create_tissue_classification_pipeline()
+    tissue_classif = create_tissue_classification_node()
+    rigid_registration = create_rigid_registration_pipeline()
     csd = create_spherical_deconvolution_pipeline()
     tractogram_generation = create_tractogram_generation_pipeline()
+
     # Input and output nodes
     inputnode = pe.Node(
         utility.IdentityInterface(
@@ -264,11 +248,17 @@ def create_core_pipeline():
         inputnode, "diffusion_volume", preprocessing, "inputnode.diffusion_volume"
     )
     core_pipeline.connect(
-        preprocessing, "outputnode.corrected_diffusion_volume", tensor, "inputnode.diffusion_volume"
+        preprocessing,
+        "outputnode.corrected_diffusion_volume",
+        tensor,
+        "inputnode.diffusion_volume",
     )
     core_pipeline.connect(preprocessing, "outputnode.mask", tensor, "inputnode.mask")
     core_pipeline.connect(
-        preprocessing, "outputnode.corrected_diffusion_volume", csd, "inputnode.diffusion_volume"
+        preprocessing,
+        "outputnode.corrected_diffusion_volume",
+        csd,
+        "inputnode.diffusion_volume",
     )
     core_pipeline.connect(
         tensor, "outputnode.fa", rigid_registration, "rigid_transform_estimation.image"
@@ -318,7 +308,8 @@ def create_diffusion_pipeline():
     # input and output node
     inputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["diffusion_volume", "bvals", "bvecs", "t1_volume"], mandatory_inputs=False
+            fields=["diffusion_volume", "bvals", "bvecs", "t1_volume"],
+            mandatory_inputs=False,
         ),
         name="inputnode",
     )
@@ -336,7 +327,11 @@ def create_diffusion_pipeline():
             (
                 inputnode,
                 mrconvert,
-                [("diffusion_volume", "in_file"), ("bvals", "in_bval"), ("bvecs", "in_bvec")],
+                [
+                    ("diffusion_volume", "in_file"),
+                    ("bvals", "in_bval"),
+                    ("bvecs", "in_bvec"),
+                ],
             )
         ]
     )

@@ -1,120 +1,37 @@
 """
-Dirty wrapping of the Mrtrix3 command necessary but not available in Nipype
-
-Commands are wrapped using python function and the Function variant interface of nipype
-TO DO : use the Mrtrix3Base or CommandLine class of Nipype to perform a cleaner wrap
+Usual Mrtrix3 Nipype nodes but with customized parameters
 """
 
 import nipype.pipeline.engine as pe
-from nipype.interfaces.utility import Function
+from nipype.interfaces import mrtrix3
 
 
-def mrregister_rigid(image, template, transform):
+def create_tissue_classification_node():
     """
-    Dirty wrapping of the Mrtrix3 mrregister command that estimate rigid transformation between
-    image and template (reference image)
-    :param image: path of the image to register
-    :param template: path of the reference image
-    :param transform: path of the text file containing the estimated transform
+    Instanciate T1 volume tissue classification Nipype node
+    :return: tissue_classif (Nipype Node)
+    """
+    # Tissue classification from T1 MRI data
+    tissue_classif = pe.Node(interface=mrtrix3.Generate5tt(), name="tissue_classif")
+    # rely on FSL for T1 tissue segmentation
+    tissue_classif.inputs.algorithm = "fsl"
+    return tissue_classif
+
+
+def create_tractography_node(n_tracks, min_length, max_length):
+    """
+    Generate whole brain probabilistic tractogram Nipype node
+    :param n_tracks:
+    :param min_length:
+    :param max_length:
     :return:
     """
-    import subprocess
-    from distutils import spawn
+    tractography = pe.Node(interface=mrtrix3.tracking.Tractography(), name="tckgen")
+    tractography.inputs.algorithm = "iFOD2"
+    tractography.inputs.n_tracks = n_tracks
+    tractography.inputs.crop_at_gmwmi = True
+    tractography.inputs.backtrack = True
+    tractography.inputs.min_length = min_length
+    tractography.inputs.max_length = max_length
 
-    mrregister = spawn.find_executable("mrregister")
-    cmd = (
-        mrregister
-        + " "
-        + "-type rigid"
-        + " "
-        + "-rigid"
-        + " "
-        + transform
-        + " "
-        + image
-        + " "
-        + template
-    )
-    subprocess.run(cmd)
-    pass
-
-
-def mrtransform_linear(in_file, out_file, transform):
-    """
-    Dirty wrapping of the mrtransform command to apply linear transform to a volume
-    :param input:
-    :param output:
-    :param transform:
-    :return:
-    """
-    import subprocess
-    from distutils import spawn
-
-    mrtransform = spawn.find_executable("mrtransform")
-    # inverse option is passed to take into account reverse convention (see Mrtrix doc)
-    cmd = (
-        mrtransform
-        + " "
-        + "-linear"
-        + " "
-        + transform
-        + " "
-        + "-inverse"
-        + " "
-        + in_file
-        + " "
-        + out_file
-    )
-    subprocess.run(cmd)
-    pass
-
-
-def tcksift(input_tracks, wm_fod, filtered_tracks):
-    """
-    :param input_tracks:
-    :param wm_fod:
-    :param filtered_tracks:
-    :return:
-    """
-    import subprocess
-    from distutils import spawn
-
-    sift = spawn.find_executable("tcksift")
-    cmd = sift + " " + input_tracks + " " + wm_fod + " " + filtered_tracks
-    subprocess.run(cmd)
-    pass
-
-
-# create Nipype nodes associated to previously defined functions
-
-rigid_transform_estimation = pe.Node(
-    name="rigid_transform_estimation",
-    interface=Function(
-        input_names=["image", "template"],
-        output_names=["transform"],
-        function=mrregister_rigid,
-    ),
-)
-apply_linear_transform = pe.Node(
-    name="apply_linear_transform",
-    interface=Function(
-        input_names=["in_file", "transform"],
-        output_names=["out_file"],
-        function=mrtransform_linear,
-    ),
-)
-
-sift_filtering = pe.Node(
-    name="sift_filtering",
-    interface=Function(
-        input_names=["input_tracks", "wm_fod"],
-        output_names=["filtered_tracks"],
-        function=tcksift,
-    ),
-)
-
-rigid_registration = pe.Workflow(name="rigid_registration")
-# assume only the transform is identical, warped volume can be different
-rigid_registration.connect(
-    rigid_transform_estimation, "transform", apply_linear_transform, "transform"
-)
+    return tractography
