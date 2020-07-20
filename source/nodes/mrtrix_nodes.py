@@ -85,39 +85,6 @@ def tcksift(input_tracks, wm_fod, filtered_tracks):
     pass
 
 
-def select_between_spheres(input_tracks, sphere1, sphere2, output_tracks):
-    """
-    Select tracks whose extremities are located inside two spheres
-    :param input_tracks: path to the tck file
-    :param sphere1:tuple  (x1,y1,z1,r1)
-    :param sphere2: tuple (x2,y2,z2,r2)
-    :param output_tracks: path to output the selected tracks
-    :return: None
-    """
-    import subprocess
-    from distutils import spawn
-
-    def sphere_to_string(sphere):
-        return str(sphere)[1:-1]
-
-    tckedit = spawn.find_executable("tckedit")
-    cmd = (
-        tckedit
-        + " "
-        + input_tracks
-        + " "
-        + "-include"
-        + " "
-        + sphere_to_string(sphere1)
-        + " "
-        + "-include"
-        + sphere_to_string(sphere2)
-        + output_tracks
-    )
-    subprocess.run(cmd)
-    pass
-
-
 # create Nipype nodes associated to previously defined functions
 
 rigid_transform_estimation = pe.Node(
@@ -143,13 +110,6 @@ sift_filtering = pe.Node(
         input_names=["input_tracks", "wm_fod"],
         output_names=["filtered_tracks"],
         function=tcksift,
-    ),
-)
-tracks_selection = pe.Node(
-    name="tracks_selection",
-    interface=Function(
-        input_names=["input_tracks", "sphere1", "sphere2"],
-        output_names=["output_tracks"],
     ),
 )
 

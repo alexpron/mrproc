@@ -1,9 +1,9 @@
 package:
-  name: "mri-processing"
+  name: "mrproc"
   version: "0.0.0"
 
 source:
-  git_url: "https://github.com/alexpron/mri-processing.git"
+  git_url: "https://github.com/alexpron/mrproc.git"
 
 requirements:
 
