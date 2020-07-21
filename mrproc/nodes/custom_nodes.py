@@ -6,6 +6,7 @@ Commands are wrapped using python function and the Function variant interface of
 """
 
 import nipype.pipeline.engine as pe
+from nipype.interfaces import utility
 from nipype.interfaces.utility import Function
 
 
@@ -149,16 +150,4 @@ def create_sift_filtering_node():
     return sift_filtering
 
 
-def create_rigid_registration_pipeline():
-    """
-    Instanciate a pipeline that
-    :return:
-    """
-    rigid_registration = pe.Workflow(name="rigid_registration")
-    rigid_transform_estimation = create_rigid_transform_est_node()
-    apply_linear_transform = create_apply_linear_transform_node()
-    # assume only the transform is identical, warped volume can be different
-    rigid_registration.connect(
-        rigid_transform_estimation, "transform", apply_linear_transform, "transform",
-    )
-    return rigid_registration
+

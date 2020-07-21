@@ -10,7 +10,7 @@ The pipelines cover the following steps:
 + Tractogram filtering (SIFT)
 + T1 tissue classification
 + diffusion to T1 registration
-Pipelines rely on Mrtrix3, FSL, Ants and Nipype package
+Pipelines rely on MRtrix3, FSL, Ants and Nipype package
 """
 
 
@@ -21,7 +21,10 @@ from nipype.interfaces import mrtrix3
 from mrproc.nodes.mrtrix_nodes import create_tractography_node
 from mrproc.nodes.mrtrix_nodes import create_tissue_classification_node
 from mrproc.nodes.custom_nodes import create_sift_filtering_node
-from mrproc.nodes.custom_nodes import create_rigid_registration_pipeline
+from mrproc.nodes.custom_nodes import (
+    create_apply_linear_transform_node,
+    create_rigid_transform_est_node,
+)
 
 
 # Constants
@@ -107,9 +110,58 @@ def create_tensor_pipeline():
     return tensor
 
 
+def create_rigid_registration_pipeline():
+    """
+    Instanciate a pipeline that
+    :return:
+    """
+
+    rigid_transform_estimation = create_rigid_transform_est_node()
+    apply_linear_transform = create_apply_linear_transform_node()
+    rigid_registration = pe.Workflow(name="rigid_registration")
+    inputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=["moving_volume", "template_volume", "to_register_volume"],
+            mandatory_inputs=False,
+        ),
+        name="inputnode",
+    )
+    outputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=["transform", "registered_volume"], mandatory_inputs=False,
+        ),
+        name="outputnode",
+    )
+    # assume only the transform is identical, warped volume can be different
+    rigid_registration.connect(
+        rigid_transform_estimation, "transform", apply_linear_transform, "transform",
+    )
+    rigid_registration.connect(
+        [
+            (
+                inputnode,
+                rigid_transform_estimation,
+                [("moving_volume", "image"), ("template_volume", "template"),],
+            )
+        ]
+    )
+    rigid_registration.connect(
+        [(inputnode, apply_linear_transform, [("to_register_volume", "in_file")])]
+    )
+    rigid_registration.connect(
+        apply_linear_transform, "out_file", outputnode, "registered_volume"
+    )
+    rigid_registration.connect(
+        rigid_transform_estimation, "transform", outputnode, "transform"
+    )
+
+    return rigid_registration
+
+
 def create_spherical_deconvolution_pipeline():
     """
-    Estimate impulsionnal response and derived multi-shell multi
+    Estimate impulsionnal response and derived multi-shell multi tissue fiber
+    orientation distribution (FOD)
     :return:
     """
     diffusion2response = pe.Node(
@@ -165,16 +217,17 @@ def create_spherical_deconvolution_pipeline():
     return csd
 
 
-
-
-def create_tractogram_generation_pipeline(n_tracks=N_TRACKS ):
+def create_tractogram_generation_pipeline(
+    n_tracks=N_TRACKS, min_length=MIN_LENGTH, max_length=MAX_LENGTH
+):
     """
     Whole brain probabilistic anatomically constrained tractogram generation and filtering
     :return:
     """
 
-    tractography = create_tractography_node(n_tracks, min_length=MIN_LENGTH,
-                                            max_length=MAX_LENGTH)
+    tractography = create_tractography_node(
+        n_tracks, min_length=MIN_LENGTH, max_length=MAX_LENGTH
+    )
     sift_filtering = create_sift_filtering_node()
 
     # Input and output nodes
@@ -210,9 +263,6 @@ def create_tractogram_generation_pipeline(n_tracks=N_TRACKS ):
         sift_filtering, "filtered_tracks", outputnode, "tractogram"
     )
     return tractogram_pipeline
-
-
-
 
 
 def create_core_pipeline():
@@ -261,15 +311,15 @@ def create_core_pipeline():
         "inputnode.diffusion_volume",
     )
     core_pipeline.connect(
-        tensor, "outputnode.fa", rigid_registration, "rigid_transform_estimation.image"
+        tensor, "outputnode.fa", rigid_registration, "inputnode.moving_volume"
     )
     core_pipeline.connect(inputnode, "t1_volume", tissue_classif, "in_file")
     core_pipeline.connect(
-        tissue_classif, "out_file", rigid_registration, "apply_linear_transform.in_file"
+        tissue_classif, "out_file", rigid_registration, "inputnode.to_register_volume"
     )
     core_pipeline.connect(
         rigid_registration,
-        "apply_linear_transform.out_file",
+        "outputnode.registered_volume",
         csd,
         "inputnode.5tt_file",
     )
@@ -282,7 +332,7 @@ def create_core_pipeline():
     )
     core_pipeline.connect(
         rigid_registration,
-        "apply_linear_transform.out_file",
+        "outputnode.registered_volume",
         tractogram_generation,
         "inputnode.act_file",
     )
