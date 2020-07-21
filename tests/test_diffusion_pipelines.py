@@ -7,7 +7,7 @@ In construction:
 # pipeline engine of nipype
 
 # python interface to mrtrix3 (mrtrix3 need to be installed in your computer)
-from mrproc.pipelines.diffusion_pipelines import create_diffusion_pipeline
+from mrproc.pipelines.diffusion import create_diffusion_pipeline
 
 
 def test_create_diffusion_pipeline():
