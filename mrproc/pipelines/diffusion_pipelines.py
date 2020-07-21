@@ -270,24 +270,26 @@ def create_core_pipeline():
 
     :return:
     """
-
-    preprocessing = create_preprocessing_pipeline()
-    tensor = create_tensor_pipeline()
-    tissue_classif = create_tissue_classification_node()
-    rigid_registration = create_rigid_registration_pipeline()
-    csd = create_spherical_deconvolution_pipeline()
-    tractogram_generation = create_tractogram_generation_pipeline()
-
-    # Input and output nodes
+    # Pipeline Nodes
+    # Inputs params
     inputnode = pe.Node(
         utility.IdentityInterface(
             fields=["diffusion_volume", "t1_volume"], mandatory_inputs=False
         ),
         name="inputnode",
     )
+    # Processing steps
+    preprocessing = create_preprocessing_pipeline()
+    tensor = create_tensor_pipeline()
+    tissue_classif = create_tissue_classification_node()
+    rigid_registration = create_rigid_registration_pipeline()
+    csd = create_spherical_deconvolution_pipeline()
+    tractogram_generation = create_tractogram_generation_pipeline()
+    # Outputs params
     outputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["corrected_diffusion_volume", "wm_fod", "tractogram"],
+            fields=["corrected_diffusion_volume", "wm_fod", "tractogram",
+                    "diffusion_to_t1_transform"],
             mandatory_inputs=False,
         ),
         name="outputnode",
@@ -323,6 +325,12 @@ def create_core_pipeline():
         csd,
         "inputnode.5tt_file",
     )
+    core_pipeline.connect(
+        rigid_registration,
+        "outputnode.transform",
+        outputnode,
+        "diffusion_to_t1_transform"
+    )
     core_pipeline.connect(preprocessing, "outputnode.mask", csd, "inputnode.mask")
     core_pipeline.connect(
         csd, "outputnode.wm_fod", tractogram_generation, "inputnode.wm_fod"
@@ -352,10 +360,9 @@ def create_core_pipeline():
 
 def create_diffusion_pipeline():
 
-    # Data conversion from .nii to .mif file (allows to embed diffusion bvals et bvecs)
-    mrconvert = pe.Node(interface=mrtrix3.MRConvert(), name="mrconvert")
-    core_pipeline = create_core_pipeline()
-    # input and output node
+
+    # Nodes
+    # Input params
     inputnode = pe.Node(
         utility.IdentityInterface(
             fields=["diffusion_volume", "bvals", "bvecs", "t1_volume"],
@@ -363,9 +370,15 @@ def create_diffusion_pipeline():
         ),
         name="inputnode",
     )
+    # Data conversion from .nii to .mif file (allows to embed diffusion bvals et bvecs)
+    mrconvert = pe.Node(interface=mrtrix3.MRConvert(), name="mrconvert")
+    # Main processing steps
+    core_pipeline = create_core_pipeline()
+    # Outputs params
     outputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["corrected_diffusion_volume", "wm_fod", "tractogram"],
+            fields=["corrected_diffusion_volume", "wm_fod", "tractogram",
+                    "diffusion_to_t1_transform"],
             mandatory_inputs=False,
         ),
         name="outputnode",
@@ -400,6 +413,10 @@ def create_diffusion_pipeline():
     diffusion_pipeline.connect(core_pipeline, "outputnode.wm_fod", outputnode, "wm_fod")
     diffusion_pipeline.connect(
         core_pipeline, "outputnode.tractogram", outputnode, "tractogram"
+    )
+    diffusion_pipeline.connect(
+        core_pipeline,"outputnode.diffusion_to_t1_transform", outputnode,
+        "diffusion_to_t1_transform"
     )
 
     return diffusion_pipeline
