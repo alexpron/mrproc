@@ -43,7 +43,7 @@ def create_preprocessing_pipeline():
     diffusionbiascorrect = pe.Node(
         interface=mrtrix3.preprocess.DWIBiasCorrect(), name="diffusionbiascorrect"
     )
-    diffusionbiascorrect.use_ants = True
+    diffusionbiascorrect.inputs.use_fsl = True
 
     # gross brain mask stemming from diffusion data
     diffusion2mask = pe.Node(interface=mrtrix3.utils.BrainMask(), name="diffusion2mask")
@@ -84,6 +84,7 @@ def create_tensor_pipeline():
 
     # derived FA contrast
     tensor2fa = pe.Node(interface=mrtrix3.TensorMetrics(), name="tensor2fa")
+    tensor2fa.inputs.out_fa = 'fa.mif'
 
     # input and output nodes
     inputnode = pe.Node(

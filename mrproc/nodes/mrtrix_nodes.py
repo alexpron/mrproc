@@ -15,6 +15,7 @@ def create_tissue_classification_node():
     tissue_classif = pe.Node(interface=mrtrix3.Generate5tt(), name="tissue_classif")
     # rely on FSL for T1 tissue segmentation
     tissue_classif.inputs.algorithm = "fsl"
+    tissue_classif.inputs.out_file = '5tt.mif'
     return tissue_classif
 
 
