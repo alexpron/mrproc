@@ -27,19 +27,7 @@ def mrregister_rigid(image, template, transform):
     from distutils import spawn
 
     mrregister = spawn.find_executable("mrregister")
-    cmd = (
-            mrregister
-            + " "
-            + "-type rigid"
-            + " "
-            + "-rigid"
-            + " "
-            + transform
-            + " "
-            + image
-            + " "
-            + template
-    )
+    cmd = [mrregister, '-type', 'rigid', '-rigid', transform, image, template]
     subprocess.run(cmd)
     pass
 
@@ -62,19 +50,7 @@ def mrtransform_linear(in_file, out_file, transform):
 
     mrtransform = spawn.find_executable("mrtransform")
     # inverse option is passed to take into account reverse convention (see Mrtrix doc)
-    cmd = (
-            mrtransform
-            + " "
-            + "-linear"
-            + " "
-            + transform
-            + " "
-            + "-inverse"
-            + " "
-            + in_file
-            + " "
-            + out_file
-    )
+    cmd = [mrtransform, '-linear', transform, '-inverse', in_file, out_file]
     subprocess.run(cmd)
     pass
 
@@ -110,8 +86,7 @@ def create_rigid_transform_est_node():
     rigid_transform_estimation = pe.Node(
         name="rigid_transform_estimation",
         interface=Function(
-            input_names=["image", "template"],
-            output_names=["transform"],
+            input_names=["image", "template", "transform"],
             function=mrregister_rigid,
         ),
     )
@@ -126,8 +101,7 @@ def create_apply_linear_transform_node():
     apply_linear_transform = pe.Node(
         name="apply_linear_transform",
         interface=Function(
-            input_names=["in_file", "transform"],
-            output_names=["out_file"],
+            input_names=["in_file", "transform", "out_file"],
             function=mrtransform_linear,
         ),
     )

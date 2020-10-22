@@ -116,8 +116,9 @@ def create_rigid_registration_pipeline():
     Instanciate a pipeline that
     :return:
     """
-
+    TRANSFORM = 'diffusion_to_t1'
     rigid_transform_estimation = create_rigid_transform_est_node()
+    rigid_transform_estimation.inputs.transform = TRANSFORM
     apply_linear_transform = create_apply_linear_transform_node()
     rigid_registration = pe.Workflow(name="rigid_registration")
     inputnode = pe.Node(
@@ -134,9 +135,7 @@ def create_rigid_registration_pipeline():
         name="outputnode",
     )
     # assume only the transform is identical, warped volume can be different
-    rigid_registration.connect(
-        rigid_transform_estimation, "transform", apply_linear_transform, "transform",
-    )
+    apply_linear_transform.inputs.transform = TRANSFORM
     rigid_registration.connect(
         [
             (
@@ -146,12 +145,12 @@ def create_rigid_registration_pipeline():
             )
         ]
     )
+
     rigid_registration.connect(
         [(inputnode, apply_linear_transform, [("to_register_volume", "in_file")])]
     )
-    rigid_registration.connect(
-        apply_linear_transform, "out_file", outputnode, "registered_volume"
-    )
+    apply_linear_transform.inputs.out_file ="5tt_diffusion_space.mif"
+    outputnode.inputs.registered_volume = "5tt_diffusion_space.mif"
     rigid_registration.connect(
         rigid_transform_estimation, "transform", outputnode, "transform"
     )
@@ -317,6 +316,9 @@ def create_core_pipeline():
         tensor, "outputnode.fa", rigid_registration, "inputnode.moving_volume"
     )
     core_pipeline.connect(inputnode, "t1_volume", tissue_classif, "in_file")
+    core_pipeline.connect(
+        inputnode, "t1_volume", rigid_registration, "inputnode.template_volume"
+    )
     core_pipeline.connect(
         tissue_classif, "out_file", rigid_registration, "inputnode.to_register_volume"
     )
