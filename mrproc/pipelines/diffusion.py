@@ -17,14 +17,13 @@ Pipelines rely on MRtrix3, FSL, Ants and Nipype package
 import nipype.pipeline.engine as pe
 from nipype.interfaces import utility
 from nipype.interfaces import mrtrix3
+from nipype.interfaces import fsl
 
 from mrproc.nodes.mrtrix_nodes import create_tractography_node
 from mrproc.nodes.mrtrix_nodes import create_tissue_classification_node
+from mrproc.nodes.fsl_nodes import create_rigid_registration_node
 from mrproc.nodes.custom_nodes import create_sift_filtering_node
-from mrproc.nodes.custom_nodes import (
-    create_apply_linear_transform_node,
-    create_rigid_transform_est_node,
-)
+
 
 
 # Constants
@@ -81,10 +80,11 @@ def create_tensor_pipeline():
     diffusion2tensor = pe.Node(
         interface=mrtrix3.reconst.FitTensor(), name="diffusion2tensor"
     )
-
     # derived FA contrast
     tensor2fa = pe.Node(interface=mrtrix3.TensorMetrics(), name="tensor2fa")
-    tensor2fa.inputs.out_fa = 'fa.mif'
+    # Small hack to handle the lack of default name (nifti format used as fa need to
+    # be processed by FSL for registration
+    tensor2fa.inputs.out_fa = 'fa.nii.gz'
 
     # input and output nodes
     inputnode = pe.Node(
@@ -111,51 +111,7 @@ def create_tensor_pipeline():
     return tensor
 
 
-def create_rigid_registration_pipeline():
-    """
-    Instanciate a pipeline that
-    :return:
-    """
-    TRANSFORM = 'diffusion_to_t1'
-    rigid_transform_estimation = create_rigid_transform_est_node()
-    rigid_transform_estimation.inputs.transform = TRANSFORM
-    apply_linear_transform = create_apply_linear_transform_node()
-    rigid_registration = pe.Workflow(name="rigid_registration")
-    inputnode = pe.Node(
-        utility.IdentityInterface(
-            fields=["moving_volume", "template_volume", "to_register_volume"],
-            mandatory_inputs=False,
-        ),
-        name="inputnode",
-    )
-    outputnode = pe.Node(
-        utility.IdentityInterface(
-            fields=["transform", "registered_volume"], mandatory_inputs=False,
-        ),
-        name="outputnode",
-    )
-    # assume only the transform is identical, warped volume can be different
-    apply_linear_transform.inputs.transform = TRANSFORM
-    rigid_registration.connect(
-        [
-            (
-                inputnode,
-                rigid_transform_estimation,
-                [("moving_volume", "image"), ("template_volume", "template"),],
-            )
-        ]
-    )
 
-    rigid_registration.connect(
-        [(inputnode, apply_linear_transform, [("to_register_volume", "in_file")])]
-    )
-    apply_linear_transform.inputs.out_file ="5tt_diffusion_space.mif"
-    outputnode.inputs.registered_volume = "5tt_diffusion_space.mif"
-    rigid_registration.connect(
-        rigid_transform_estimation, "transform", outputnode, "transform"
-    )
-
-    return rigid_registration
 
 
 def create_spherical_deconvolution_pipeline():
@@ -167,6 +123,8 @@ def create_spherical_deconvolution_pipeline():
     diffusion2response = pe.Node(
         interface=mrtrix3.preprocess.ResponseSD(), name="diffusion2response"
     )
+    diffusion2response.inputs.gm_file = 'gm.txt'
+    diffusion2response.inputs.csf_file = 'csf.txt'
     diffusion2response.inputs.algorithm = "msmt_5tt"
 
     # Multi-shell multi tissue spherical deconvolution of the diffusion MRI data
@@ -174,6 +132,9 @@ def create_spherical_deconvolution_pipeline():
         interface=mrtrix3.reconst.ConstrainedSphericalDeconvolution(),
         name="diffusion2fod",
     )
+    diffusion2fod.inputs.algorithm = 'msmt_csd'
+    diffusion2fod.inputs.csf_odf = 'csf.mif'
+    diffusion2fod.inputs.gm_odf = 'gm.mif'
 
     # Input and output nodes
     inputnode = pe.Node(
@@ -212,7 +173,7 @@ def create_spherical_deconvolution_pipeline():
         ]
     )
     csd.connect(inputnode, "diffusion_volume", diffusion2fod, "in_file")
-    csd.connect(diffusion2fod, "wm_odf", outputnode, "wm_odf")
+    csd.connect(diffusion2fod, "wm_odf", outputnode, "wm_fod")
 
     return csd
 
@@ -253,15 +214,12 @@ def create_tractogram_generation_pipeline(
             )
         ]
     )
-    tractogram_pipeline.connect(inputnode, "wm_fod", sift_filtering, "wm_fod")
     # brain mask is used to randomly draw seeds
     tractogram_pipeline.connect(inputnode, "mask", tractography, "seed_gmwmi")
     tractogram_pipeline.connect(
-        tractography, "out_file", sift_filtering, "input_tracks"
+        tractography, "out_file", outputnode, "tractogram"
     )
-    tractogram_pipeline.connect(
-        sift_filtering, "filtered_tracks", outputnode, "tractogram"
-    )
+
     return tractogram_pipeline
 
 
@@ -280,11 +238,31 @@ def create_core_pipeline():
     )
     # Processing steps
     preprocessing = create_preprocessing_pipeline()
+    # tensor and derived metrics (FA)
     tensor = create_tensor_pipeline()
+    #t1 brain extraction
+    bet = pe.Node(fsl.preprocess.BET(robust=True), name="bet")
+    # tissue classification (T1 volume)
     tissue_classif = create_tissue_classification_node()
-    rigid_registration = create_rigid_registration_pipeline()
+    # rigid registration between diffusion and structural space
+    rigid_registration = create_rigid_registration_node()
+    # fa (dwi space) upsampling to 1mm ease registration
+    resample_fa = pe.Node(fsl.preprocess.FLIRT(apply_isoxfm=1),
+                          name="resample_fa")
+    # apply rigid transformation
+    applyxfm = pe.Node(fsl.preprocess.ApplyXFM(), name="applyxfm")
+    # inverse rigid transformation
+    invxfm = pe.Node(fsl.utils.ConvertXFM(invert_xfm=True), name="invxfm")
+
+    # apply rigid transformation
+    applyxfm = pe.Node(fsl.preprocess.ApplyXFM(), name="applyxfm")
+    # inverse rigid transformation
+    invxfm = pe.Node(fsl.utils.ConvertXFM(invert_xfm=True), name="invxfm")
+  
+    # Multi shell multi tissue spherical deconvolution
     csd = create_spherical_deconvolution_pipeline()
-    tractogram_generation = create_tractogram_generation_pipeline()
+    # Whole brain anatomically constrained probabilistic tractogram
+    tractogram_pipeline = create_tractogram_generation_pipeline()
     # Outputs params
     outputnode = pe.Node(
         utility.IdentityInterface(
@@ -312,43 +290,35 @@ def create_core_pipeline():
         csd,
         "inputnode.diffusion_volume",
     )
-    core_pipeline.connect(
-        tensor, "outputnode.fa", rigid_registration, "inputnode.moving_volume"
-    )
-    core_pipeline.connect(inputnode, "t1_volume", tissue_classif, "in_file")
-    core_pipeline.connect(
-        inputnode, "t1_volume", rigid_registration, "inputnode.template_volume"
-    )
-    core_pipeline.connect(
-        tissue_classif, "out_file", rigid_registration, "inputnode.to_register_volume"
-    )
-    core_pipeline.connect(
-        rigid_registration,
-        "outputnode.registered_volume",
-        csd,
-        "inputnode.5tt_file",
-    )
-    core_pipeline.connect(
-        rigid_registration,
-        "outputnode.transform",
-        outputnode,
-        "diffusion_to_t1_transform"
-    )
+    # Upsample FA to 1mm which is roughly the T1 resolution
+    core_pipeline.connect(tensor,"outputnode.fa", resample_fa, "in_file")
+    core_pipeline.connect(tensor, "outputnode.fa", resample_fa, "reference")
+    # Estimate rigid transform (FA --> T1), invert it and apply it to tissue
+    # brain masked T1 volume
+    core_pipeline.connect(inputnode, "t1_volume", bet, "in_file")
+    core_pipeline.connect(bet, "out_file", rigid_registration, "reference")
+
+    core_pipeline.connect(tensor, "outputnode.fa", rigid_registration, "in_file")
+    core_pipeline.connect(rigid_registration,"out_matrix_file", invxfm, "in_file")
+    # transform is applied directly to T1 not to 5TT
+    core_pipeline.connect(inputnode, "t1_volume", applyxfm, "in_file")
+    core_pipeline.connect(invxfm, "out_file", applyxfm, "in_matrix_file")
+    core_pipeline.connect(resample_fa, "out_file", applyxfm, "reference")
+    core_pipeline.connect(applyxfm, "out_file", tissue_classif, "in_file")
+
     core_pipeline.connect(preprocessing, "outputnode.mask", csd, "inputnode.mask")
+    core_pipeline.connect(tissue_classif, "out_file", csd, "inputnode.5tt_file" )
     core_pipeline.connect(
-        csd, "outputnode.wm_fod", tractogram_generation, "inputnode.wm_fod"
+        csd, "outputnode.wm_fod", tractogram_pipeline, "inputnode.wm_fod"
     )
+    core_pipeline.connect(tissue_classif, "out_file", tractogram_pipeline,
+                          "inputnode.act_file")
     core_pipeline.connect(
-        preprocessing, "outputnode.mask", tractogram_generation, "inputnode.mask"
+        preprocessing, "outputnode.mask", tractogram_pipeline, "inputnode.mask"
     )
+
     core_pipeline.connect(
-        rigid_registration,
-        "outputnode.registered_volume",
-        tractogram_generation,
-        "inputnode.act_file",
-    )
-    core_pipeline.connect(
-        tractogram_generation, "outputnode.tractogram", outputnode, "tractogram"
+        tractogram_pipeline, "outputnode.tractogram", outputnode, "tractogram"
     )
     core_pipeline.connect(csd, "outputnode.wm_fod", outputnode, "wm_fod")
     core_pipeline.connect(

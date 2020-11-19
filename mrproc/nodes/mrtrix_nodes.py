@@ -27,9 +27,10 @@ def create_tractography_node(n_tracks, min_length, max_length):
     :param max_length:
     :return:
     """
-    tractography = pe.Node(interface=mrtrix3.tracking.Tractography(), name="tckgen")
+    tractography = pe.Node(interface=mrtrix3.tracking.Tractography(),
+                           name="tractography")
     tractography.inputs.algorithm = "iFOD2"
-    tractography.inputs.n_tracks = n_tracks
+    tractography.inputs.select = int(n_tracks)
     tractography.inputs.crop_at_gmwmi = True
     tractography.inputs.backtrack = True
     tractography.inputs.min_length = min_length
