@@ -12,7 +12,7 @@ setup(
     version="0.0.0",
     packages=find_packages(),
     author="Alexandre Pron",
-    description="Diffusion Weighted MRI processing pipelines",
+    description="Diffusion Weighted MRI processing workflows",
     url="https://github.com/alexpron/mrproc",
     license="MIT",
     # python_requires='>=3.6',  # enforce Python 3.6 as minimum

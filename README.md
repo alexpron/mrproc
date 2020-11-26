@@ -23,4 +23,4 @@ pip install -e .['dev']
 ```
 
 # Current Diffusion pipeline 
-![graph](./tests/graph.png)
+![graph](tests/workflows/graph.png)

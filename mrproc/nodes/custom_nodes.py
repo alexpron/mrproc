@@ -1,19 +1,19 @@
 """
 Dirty wrapping of the Mrtrix3 command necessary but not available in Nipype
 
-Commands are wrapped using python function and the Function variant interface of nipype
-# TO DO : use the Mrtrix3Base or CommandLine class of Nipype to perform a cleaner wrap
+Quick and dirty wrappings using python function and  nipype's Function interface of
+Mrtrix3 commands
 """
+# TO DO: implement clean wrappings by forking nipype
 
 import nipype.pipeline.engine as pe
-from nipype.interfaces import utility
 from nipype.interfaces.utility import Function
 
 
+def tcksift(input_tracks, wm_fod, act, filtered_tracks):
+    """Wrapping of the tcksift command
 
-def tcksift(input_tracks, wm_fod, filtered_tracks):
-    """
-    Dirty wrapping of the tcksif filtering command (default options)
+    Default options and stopping criteria with processing mask derived from act tissue file
     :param input_tracks: path of the tractogram to filter
     :param wm_fod: path of the white matter fiber orientation distribution volume
     used to filter the tractogram
@@ -24,14 +24,10 @@ def tcksift(input_tracks, wm_fod, filtered_tracks):
     from distutils import spawn
 
     sift = spawn.find_executable("tcksift")
-    cmd = sift + " " + input_tracks + " " + wm_fod + " " + filtered_tracks
+    print(sift)
+    cmd = [sift, input_tracks, wm_fod, "-act", act, filtered_tracks]
     subprocess.run(cmd)
     pass
-
-
-# Instantiate Nipype Nodes from the python wrappers (by default generic nodes are
-# created)
-
 
 
 def create_sift_filtering_node():
@@ -42,12 +38,12 @@ def create_sift_filtering_node():
     sift_filtering = pe.Node(
         name="sift_filtering",
         interface=Function(
-            input_names=["input_tracks", "wm_fod", "filtered_tracks"],
+            input_names=["input_tracks", "wm_fod", "act", "filtered_tracks"],
             output_names=["filtered_tracks"],
             function=tcksift,
         ),
     )
-    sift_filtering.inputs.filtered_tracks='filtered_tracks.tck'
+    sift_filtering.inputs.filtered_tracks = 'filtered.tck'
     return sift_filtering
 
 
