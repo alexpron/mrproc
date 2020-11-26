@@ -25,7 +25,7 @@ def tcksift(input_tracks, wm_fod, act, filtered_tracks):
 
     sift = spawn.find_executable("tcksift")
     print(sift)
-    cmd = [sift, input_tracks, wm_fod, "-act", act, filtered_tracks]
+    cmd = [sift, "-act", act, input_tracks, wm_fod, filtered_tracks]
     subprocess.run(cmd)
     pass
 

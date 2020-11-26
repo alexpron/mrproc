@@ -31,20 +31,19 @@ def create_preprocessing_pipeline():
     :return:
     """
 
-    # Bias correction of the diffusion MRI data (for more quantitative approach)
-    diffusionbiascorrect = pe.Node(
-        interface=mrtrix3.preprocess.DWIBiasCorrect(), name="diffusionbiascorrect"
-    )
-    diffusionbiascorrect.inputs.use_ants = True
-
-    # gross brain mask stemming from diffusion data
-    diffusion2mask = pe.Node(interface=mrtrix3.utils.BrainMask(), name="diffusion2mask")
-
-    # input and output nodes
+    # Nodes in
     inputnode = pe.Node(
         utility.IdentityInterface(fields=["diffusion_volume"], mandatory_inputs=False),
         name="inputnode",
     )
+    # Bias correction of the diffusion MRI data (for more quantitative approach)
+    diffusionbiascorrect = pe.Node(
+        interface=mrtrix3.preprocess.DWIBiasCorrect(use_ants=True),
+        name="diffusionbiascorrect"
+    )
+    # Gross brain mask stemming from diffusion data
+    diffusion2mask = pe.Node(interface=mrtrix3.utils.BrainMask(), name="diffusion2mask")
+    # Output Node
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=["corrected_diffusion_volume", "mask"], mandatory_inputs=False
@@ -52,7 +51,7 @@ def create_preprocessing_pipeline():
         name="outputnode",
     )
 
-    # pipeline structure
+    # Workflow connections
     preproc = pe.Workflow(name="preprocessing")
     preproc.connect(inputnode, "diffusion_volume", diffusionbiascorrect, "in_file")
     preproc.connect(diffusionbiascorrect, "out_file", diffusion2mask, "in_file")
@@ -66,26 +65,23 @@ def create_preprocessing_pipeline():
 
 def create_tensor_pipeline():
     """
-    Estimate diffusion tensor coefficient and compute FA
+    Estimate diffusion tensor coefficients and compute FA
     :return:
     """
-    # tensor coefficients estimation
-    diffusion2tensor = pe.Node(
-        interface=mrtrix3.reconst.FitTensor(), name="diffusion2tensor"
-    )
-    # derived FA contrast
-    tensor2fa = pe.Node(interface=mrtrix3.TensorMetrics(), name="tensor2fa")
-    # Small hack to handle the lack of default name (nifti format used as fa need to
-    # be processed by FSL for registration
-    tensor2fa.inputs.out_fa = 'fa.nii.gz'
-
-    # input and output nodes
+    # Nodes
     inputnode = pe.Node(
         utility.IdentityInterface(
             fields=["diffusion_volume", "mask"], mandatory_inputs=False
         ),
         name="inputnode",
     )
+    # tensor coefficients estimation
+    diffusion2tensor = pe.Node(
+        interface=mrtrix3.reconst.FitTensor(), name="diffusion2tensor"
+    )
+    # derived FA contrast (force nifti format to do registration with FSL or Ants)
+    tensor2fa = pe.Node(interface=mrtrix3.TensorMetrics(out_fa='fa.nii.gz'),
+                        name="tensor2fa")
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=["tensor_coeff", "fa"], mandatory_inputs=False
@@ -106,10 +102,18 @@ def create_tensor_pipeline():
 
 def create_spherical_deconvolution_pipeline():
     """
-    Estimate impulsionnal response and derived multi-shell multi tissue fiber
+    Estimate impulsional response and derived multi-shell multi tissue fiber
     orientation distribution (FOD)
     :return:
     """
+
+    # Input and output nodes
+    inputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=["diffusion_volume", "mask", "5tt_file"], mandatory_inputs=False
+        ),
+        name="inputnode",
+    )
     diffusion2response = pe.Node(
         interface=mrtrix3.preprocess.ResponseSD(), name="diffusion2response"
     )
@@ -125,14 +129,6 @@ def create_spherical_deconvolution_pipeline():
     diffusion2fod.inputs.algorithm = 'msmt_csd'
     diffusion2fod.inputs.csf_odf = 'csf.mif'
     diffusion2fod.inputs.gm_odf = 'gm.mif'
-
-    # Input and output nodes
-    inputnode = pe.Node(
-        utility.IdentityInterface(
-            fields=["diffusion_volume", "mask", "5tt_file"], mandatory_inputs=False
-        ),
-        name="inputnode",
-    )
     outputnode = pe.Node(
         utility.IdentityInterface(fields=["wm_fod"], mandatory_inputs=False),
         name="outputnode",
@@ -191,8 +187,9 @@ def create_tractogram_generation_pipeline():
         name="outputnode",
     )
 
-    # Workflow structure
+    # Workflow connections
     tractogram_pipeline = pe.Workflow(name="tractogram_pipeline")
+
     tractogram_pipeline.connect(
         [
             (
@@ -207,7 +204,6 @@ def create_tractogram_generation_pipeline():
         ]
     )
 
-    # connect full tractogram with
     tractogram_pipeline.connect(
         tractography, "out_file", sift_filtering, "input_tracks"
     )
