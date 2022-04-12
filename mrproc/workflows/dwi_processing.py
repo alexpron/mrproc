@@ -1,5 +1,4 @@
-"""
-Diffusion-weighted MRI data processing workflows
+"""Diffusion-weighted MRI data processing workflows
 
 The workflows cover the following steps:
 + Bias field correction
@@ -17,12 +16,12 @@ import nipype.pipeline.engine as pe
 from nipype.interfaces import utility
 from nipype.interfaces import mrtrix3
 from nipype.interfaces import fsl
+from nipype.interfaces import niftyreg
 
 from mrproc.nodes.mrtrix_nodes import create_tractography_node
 from mrproc.nodes.mrtrix_nodes import create_tissue_classification_node
-from mrproc.nodes.fsl_nodes import create_rigid_registration_node
+# from mrproc.nodes.fsl_nodes import create_rigid_registration_node
 from mrproc.nodes.custom_nodes import create_sift_filtering_node
-
 
 
 def create_preprocessing_pipeline():
@@ -39,7 +38,7 @@ def create_preprocessing_pipeline():
     # Bias correction of the diffusion MRI data (for more quantitative approach)
     diffusionbiascorrect = pe.Node(
         interface=mrtrix3.preprocess.DWIBiasCorrect(use_ants=True),
-        name="diffusionbiascorrect"
+        name="diffusionbiascorrect",
     )
     # Gross brain mask stemming from diffusion data
     diffusion2mask = pe.Node(interface=mrtrix3.utils.BrainMask(), name="diffusion2mask")
@@ -80,8 +79,9 @@ def create_tensor_pipeline():
         interface=mrtrix3.reconst.FitTensor(), name="diffusion2tensor"
     )
     # derived FA contrast (force nifti format to do registration with FSL or Ants)
-    tensor2fa = pe.Node(interface=mrtrix3.TensorMetrics(out_fa='fa.nii.gz'),
-                        name="tensor2fa")
+    tensor2fa = pe.Node(
+        interface=mrtrix3.TensorMetrics(out_fa="fa.nii.gz"), name="tensor2fa"
+    )
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=["tensor_coeff", "fa"], mandatory_inputs=False
@@ -117,8 +117,8 @@ def create_spherical_deconvolution_pipeline():
     diffusion2response = pe.Node(
         interface=mrtrix3.preprocess.ResponseSD(), name="diffusion2response"
     )
-    diffusion2response.inputs.gm_file = 'gm.txt'
-    diffusion2response.inputs.csf_file = 'csf.txt'
+    diffusion2response.inputs.gm_file = "gm.txt"
+    diffusion2response.inputs.csf_file = "csf.txt"
     diffusion2response.inputs.algorithm = "msmt_5tt"
 
     # Multi-shell multi tissue spherical deconvolution of the diffusion MRI data
@@ -126,9 +126,9 @@ def create_spherical_deconvolution_pipeline():
         interface=mrtrix3.reconst.ConstrainedSphericalDeconvolution(),
         name="diffusion2fod",
     )
-    diffusion2fod.inputs.algorithm = 'msmt_csd'
-    diffusion2fod.inputs.csf_odf = 'csf.mif'
-    diffusion2fod.inputs.gm_odf = 'gm.mif'
+    diffusion2fod.inputs.algorithm = "msmt_csd"
+    diffusion2fod.inputs.csf_odf = "csf.mif"
+    diffusion2fod.inputs.gm_odf = "gm.mif"
     outputnode = pe.Node(
         utility.IdentityInterface(fields=["wm_fod"], mandatory_inputs=False),
         name="outputnode",
@@ -166,7 +166,7 @@ def create_spherical_deconvolution_pipeline():
 
 def create_tractogram_generation_pipeline():
     """
-    Whole brain probabilistic anatomically constrained tractogram generation and 
+    Whole brain probabilistic anatomically constrained tractogram generation and
     sift filtering
     :return:
     """
@@ -174,9 +174,15 @@ def create_tractogram_generation_pipeline():
     # Nodes in processing order
     inputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["wm_fod", "mask", "act_file", "nb_tracks", "min_length",
-                    "max_length"],
-            mandatory_inputs=False
+            fields=[
+                "wm_fod",
+                "mask",
+                "act_file",
+                "nb_tracks",
+                "min_length",
+                "max_length",
+            ],
+            mandatory_inputs=False,
         ),
         name="inputnode",
     )
@@ -195,11 +201,15 @@ def create_tractogram_generation_pipeline():
             (
                 inputnode,
                 tractography,
-                [("wm_fod", "in_file"), ("mask", "roi_mask"), ("act_file",
-                                                               "act_file"), ("mask",
-                                                                             "seed_gmwmi"),
-                 ("nb_tracks", "select"), ("min_length", "min_length"),
-                 ("max_length", "max_length")],
+                [
+                    ("wm_fod", "in_file"),
+                    ("mask", "roi_mask"),
+                    ("act_file", "act_file"),
+                    ("mask", "seed_gmwmi"),
+                    ("nb_tracks", "select"),
+                    ("min_length", "min_length"),
+                    ("max_length", "max_length"),
+                ],
             )
         ]
     )
@@ -216,8 +226,9 @@ def create_tractogram_generation_pipeline():
             )
         ]
     )
-    tractogram_pipeline.connect(sift_filtering, "filtered_tracks", outputnode,
-                                "tractogram")
+    tractogram_pipeline.connect(
+        sift_filtering, "filtered_tracks", outputnode, "tractogram"
+    )
 
     return tractogram_pipeline
 
@@ -231,9 +242,14 @@ def create_core_dwi_processing_pipeline():
     # Inputs params
     inputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["diffusion_volume", "t1_volume", "nb_tracks", "min_length",
-                    "max_length"],
-            mandatory_inputs=False
+            fields=[
+                "diffusion_volume",
+                "t1_volume",
+                "nb_tracks",
+                "min_length",
+                "max_length",
+            ],
+            mandatory_inputs=False,
         ),
         name="inputnode",
     )
@@ -246,14 +262,15 @@ def create_core_dwi_processing_pipeline():
     # tissue classification (T1 volume)
     tissue_classif = create_tissue_classification_node()
     # rigid registration between diffusion and structural space
-    rigid_registration = create_rigid_registration_node()
+    # rigid_registration = create_rigid_registration_node()
     # fa (dwi space) upsampling to 1mm to ease rigid registration
-    resample_fa = pe.Node(fsl.preprocess.FLIRT(apply_isoxfm=1),
-                          name="resample_fa")
+    resample_fa = pe.Node(fsl.preprocess.FLIRT(apply_isoxfm=1), name="resample_fa")
     # apply rigid transformation
-    applyxfm = pe.Node(fsl.preprocess.ApplyXFM(), name="applyxfm")
+    # applyxfm = pe.Node(fsl.preprocess.ApplyXFM(), name="applyxfm")
     # inverse rigid transformation
-    invxfm = pe.Node(fsl.utils.ConvertXFM(invert_xfm=True), name="invxfm")
+    # invxfm = pe.Node(fsl.utils.ConvertXFM(invert_xfm=True), name="invxfm")
+    # non rigid registration with
+    reg_f3d = pe.Node(niftyreg.RegF3D(), name="reg_f3d")
     # Multi shell multi tissue spherical deconvolution
     csd = create_spherical_deconvolution_pipeline()
     # Whole brain anatomically constrained probabilistic tractogram
@@ -261,8 +278,12 @@ def create_core_dwi_processing_pipeline():
     # Outputs params
     outputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["corrected_diffusion_volume", "wm_fod", "tractogram",
-                    "diffusion_to_t1_transform"],
+            fields=[
+                "corrected_diffusion_volume",
+                "wm_fod",
+                "tractogram",
+                "diffusion_to_t1_transform",
+            ],
             mandatory_inputs=False,
         ),
         name="outputnode",
@@ -288,31 +309,39 @@ def create_core_dwi_processing_pipeline():
     # Upsample FA to 1mm which is roughly the T1 resolution
     core_pipeline.connect(tensor, "outputnode.fa", resample_fa, "in_file")
     core_pipeline.connect(tensor, "outputnode.fa", resample_fa, "reference")
-    # Estimate rigid transform (FA --> T1), invert it and apply it to tissue
+    # Estimate rigid transform (T1 --> FA directly)
     # brain masked T1 volume
     core_pipeline.connect(inputnode, "t1_volume", bet, "in_file")
-    core_pipeline.connect(bet, "out_file", rigid_registration, "reference")
-    core_pipeline.connect(tensor, "outputnode.fa", rigid_registration, "in_file")
-    core_pipeline.connect(rigid_registration, "out_matrix_file", invxfm, "in_file")
+    core_pipeline.connect(bet, "out_file", reg_f3d, "flo_file")
+    core_pipeline.connect(resample_fa, "in_file", reg_f3d,
+                          "ref_file")
+    core_pipeline.connect()
+    #core_pipeline.connect(tensor, "outputnode.fa", rigid_registration, "in_file")
+    #core_pipeline.connect(rigid_registration, "out_matrix_file", invxfm, "in_file")
     # transform is applied directly to T1 not to 5TT
-    core_pipeline.connect(inputnode, "t1_volume", applyxfm, "in_file")
-    core_pipeline.connect(invxfm, "out_file", applyxfm, "in_matrix_file")
-    core_pipeline.connect(resample_fa, "out_file", applyxfm, "reference")
-    core_pipeline.connect(applyxfm, "out_file", tissue_classif, "in_file")
+
+    #core_pipeline.connect(inputnode, "t1_volume", applyxfm, "in_file")
+    #core_pipeline.connect(invxfm, "out_file", applyxfm, "in_matrix_file")
+    #core_pipeline.connect(resample_fa, "out_file", applyxfm, "reference")
+    #core_pipeline.connect(applyxfm, "out_file", tissue_classif, "in_file")
 
     core_pipeline.connect(preprocessing, "outputnode.mask", csd, "inputnode.mask")
     core_pipeline.connect(tissue_classif, "out_file", csd, "inputnode.5tt_file")
     core_pipeline.connect(
         csd, "outputnode.wm_fod", tractogram_pipeline, "inputnode.wm_fod"
     )
-    core_pipeline.connect(inputnode,"nb_tracks", tractogram_pipeline,
-                          "inputnode.nb_tracks")
-    core_pipeline.connect(inputnode, "min_length", tractogram_pipeline,
-                         "inputnode.min_length")
-    core_pipeline.connect(inputnode, "max_length", tractogram_pipeline,
-                         "inputnode.max_length")
-    core_pipeline.connect(tissue_classif, "out_file", tractogram_pipeline,
-                          "inputnode.act_file")
+    core_pipeline.connect(
+        inputnode, "nb_tracks", tractogram_pipeline, "inputnode.nb_tracks"
+    )
+    core_pipeline.connect(
+        inputnode, "min_length", tractogram_pipeline, "inputnode.min_length"
+    )
+    core_pipeline.connect(
+        inputnode, "max_length", tractogram_pipeline, "inputnode.max_length"
+    )
+    core_pipeline.connect(
+        tissue_classif, "out_file", tractogram_pipeline, "inputnode.act_file"
+    )
     core_pipeline.connect(
         preprocessing, "outputnode.mask", tractogram_pipeline, "inputnode.mask"
     )
@@ -335,8 +364,15 @@ def create_dwi_processing_pipeline():
     # Nodes
     inputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["diffusion_volume", "bvals", "bvecs", "t1_volume", "nb_tracks",
-                    "min_length", "max_length"],
+            fields=[
+                "diffusion_volume",
+                "bvals",
+                "bvecs",
+                "t1_volume",
+                "nb_tracks",
+                "min_length",
+                "max_length",
+            ],
             mandatory_inputs=False,
         ),
         name="inputnode",
@@ -348,8 +384,12 @@ def create_dwi_processing_pipeline():
     # Outputs params
     outputnode = pe.Node(
         utility.IdentityInterface(
-            fields=["corrected_diffusion_volume", "wm_fod", "tractogram",
-                    "diffusion_to_t1_transform"],
+            fields=[
+                "corrected_diffusion_volume",
+                "wm_fod",
+                "tractogram",
+                "diffusion_to_t1_transform",
+            ],
             mandatory_inputs=False,
         ),
         name="outputnode",
@@ -392,13 +432,17 @@ def create_dwi_processing_pipeline():
         outputnode,
         "corrected_diffusion_volume",
     )
-    dwi_processing_pipeline.connect(core_pipeline, "outputnode.wm_fod", outputnode, "wm_fod")
+    dwi_processing_pipeline.connect(
+        core_pipeline, "outputnode.wm_fod", outputnode, "wm_fod"
+    )
     dwi_processing_pipeline.connect(
         core_pipeline, "outputnode.tractogram", outputnode, "tractogram"
     )
     dwi_processing_pipeline.connect(
-        core_pipeline, "outputnode.diffusion_to_t1_transform", outputnode,
-        "diffusion_to_t1_transform"
+        core_pipeline,
+        "outputnode.diffusion_to_t1_transform",
+        outputnode,
+        "diffusion_to_t1_transform",
     )
 
     return dwi_processing_pipeline

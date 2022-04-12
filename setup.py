@@ -2,8 +2,9 @@
 
 from setuptools import setup, find_packages
 
-BASE_REQUIREMENTS = ["nipype@git+https://github.com/GalBenZvi/nipype@patch-1#egg"
-                     "=nipype"]
+BASE_REQUIREMENTS = [
+    "nipype@git+https://github.com/GalBenZvi/nipype@patch-1#egg" "=nipype"
+]
 DEV_REQUIREMENTS = ["black", "flake8", "pytest", "pytest-cov", "codecov"]
 
 

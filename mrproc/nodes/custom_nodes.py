@@ -43,8 +43,5 @@ def create_sift_filtering_node():
             function=tcksift,
         ),
     )
-    sift_filtering.inputs.filtered_tracks = 'filtered.tck'
+    sift_filtering.inputs.filtered_tracks = "filtered.tck"
     return sift_filtering
-
-
-
