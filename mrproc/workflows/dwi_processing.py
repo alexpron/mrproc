@@ -20,6 +20,7 @@ from nipype.interfaces import niftyreg
 
 from mrproc.nodes.mrtrix_nodes import create_tractography_node
 from mrproc.nodes.mrtrix_nodes import create_tissue_classification_node
+
 # from mrproc.nodes.fsl_nodes import create_rigid_registration_node
 from mrproc.nodes.custom_nodes import create_sift_filtering_node
 
@@ -313,17 +314,8 @@ def create_core_dwi_processing_pipeline():
     # brain masked T1 volume
     core_pipeline.connect(inputnode, "t1_volume", bet, "in_file")
     core_pipeline.connect(bet, "out_file", reg_f3d, "flo_file")
-    core_pipeline.connect(resample_fa, "in_file", reg_f3d,
-                          "ref_file")
-    core_pipeline.connect()
-    #core_pipeline.connect(tensor, "outputnode.fa", rigid_registration, "in_file")
-    #core_pipeline.connect(rigid_registration, "out_matrix_file", invxfm, "in_file")
-    # transform is applied directly to T1 not to 5TT
-
-    #core_pipeline.connect(inputnode, "t1_volume", applyxfm, "in_file")
-    #core_pipeline.connect(invxfm, "out_file", applyxfm, "in_matrix_file")
-    #core_pipeline.connect(resample_fa, "out_file", applyxfm, "reference")
-    #core_pipeline.connect(applyxfm, "out_file", tissue_classif, "in_file")
+    core_pipeline.connect(resample_fa, "in_file", reg_f3d, "ref_file")
+    core_pipeline.connect(reg_f3d, "res_file", tissue_classif, "in_file")
 
     core_pipeline.connect(preprocessing, "outputnode.mask", csd, "inputnode.mask")
     core_pipeline.connect(tissue_classif, "out_file", csd, "inputnode.5tt_file")
